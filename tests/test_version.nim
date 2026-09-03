@@ -12,7 +12,7 @@ import UniMCP
 
 const Root = currentSourcePath().parentDir.parentDir
 
-proc valueOf(path, key, opener, closer: string): string =
+proc stated(path, key, opener, closer: string): string =
   ## The first `key … opener VALUE closer` on one line of the file; an empty
   ## `closer` reads to the end of the line. Deliberately crude: a parser per
   ## format would be more code than the thing it checks.
@@ -27,6 +27,16 @@ proc valueOf(path, key, opener, closer: string): string =
     if closes < 0: continue
     return value[0 ..< closes]
   ""
+
+proc valueOf(path, key, opener, closer: string): string =
+  ## `stated`, and a failure when it finds nothing.
+  ##
+  ## The empty string it used to return silently made a check that compares two
+  ## of them pass while reading neither -- which is exactly what the ABI suite
+  ## below did, on both sides at once. A missing value is now a failed test.
+  result = stated(path, key, opener, closer)
+  doAssert result.len > 0,
+    "test_version: nothing matched `" & key & "` … `" & opener & "` in " & path
 
 suite "one version, six copies":
   let manifest = valueOf("UniMCP.nimble", "version", "\"", "\"")
@@ -58,17 +68,13 @@ suite "one version, six copies":
     check valueOf("py/pyproject.toml", "version", "\"", "\"") == manifest
 
   test "the Python test expects it":
-    check valueOf("py/tests/test_fibonacci.py", "unimcp.version()", "\"",
+    check valueOf("py/tests/test_unimcp.py", "unimcp.version()", "\"",
         "\"") == manifest
 
-suite "one domain bound, two copies":
-  # Python reads it from the header through the binding, so only the Nim
-  # constant and the C macro state it -- and a C consumer needs a literal.
+suite "one ABI generation, two copies":
+  # The header's macro is what a C consumer compares against; the library's
+  # entry point is what it compares to. A drift between them is exactly the
+  # incompatibility the generation exists to announce, so it is checked here.
   test "the C macro agrees with the Nim constant":
-    check valueOf("include/UniMCP.h", "UNIMCP_FIB_MAX_N", " ", "") == $FibMaxN
-
-  test "the bound is the largest that fits, and one past it does not":
-    # int64 holds fib(92); fib(93) is 12200160415121876738, which it does not.
-    check fibonacci(FibMaxN) == 7540113804746346429
-    check fibonacci(FibMaxN) < high(int)
-    check float(fibonacci(FibMaxN)) * 1.6180339887 > float(high(int))
+    check valueOf("include/UniMCP.h", "define UNIMCP_ABI_VERSION", " ", "") ==
+        valueOf("src/UniMCP/c_api.nim", "UniMCPAbiVersion: cint", "= ", "")

@@ -29,10 +29,15 @@ coverage on ubuntu; a canary job that must fail; `all-green` over all of them.
 ## Conventions
 
 - English comments, terse, describe what is done. No "deprecated".
-- NimContracts `{.contractual.}` + `require:`/`ensure:`/`body:`, compiled away
-  under `-d:release`. C ABI never raises — it clamps out-of-range input.
-- A postcondition is cheaper than the body: never re-derives the result by
-  calling the function itself.
+- No NimContracts here, and the dependency is not declared: every check in this
+  library guards the wire protocol or the C ABI, and both must hold under
+  `-d:release`, where contracts are compiled away.
+- The C ABI never raises: `{.raises: [].}` on every entry point, and a failure
+  is a NULL return with the reason in `unimcp_last_error`. `handleLine`'s
+  effect is bare `Exception`, because the tool handler is a closure — a
+  `CatchableError, Defect` clause does not cover it.
+- A protocol error, an ABI failure and a failed tool call are three different
+  answers. Only the second is a failure of this library.
 - C ABI: hand-written `include/UniMCP.h` kept in sync with
   `src/UniMCP/c_api.nim`; `tests/c` links the header against the lib.
   Built `--app:staticlib`/`--app:lib --noMain --mm:arc -d:release`.
@@ -43,16 +48,25 @@ coverage on ubuntu; a canary job that must fail; `all-green` over all of them.
 - C symbols `unimcp_*` — the library's own name in lower case, not a
   short token: a binary linking several engines holds them in one namespace.
   Lib `libUniMCP`; header `UniMCP.h`.
-- `book/index.nim` is nimib: its code blocks are compiled and run at docs build,
-  so prose that outlives its API breaks the build. `py/notebooks/quickstart.ipynb`
-  plays the same role for Python and renders natively on GitHub.
+- `book/*.nim` are nimib chapters: their code blocks are compiled and run at
+  docs build, so prose that outlives its API breaks the build. Two of them
+  compile and run the C demo and the Python binding, so the book also proves
+  the surfaces still work. `py/notebooks/quickstart.ipynb` plays the same role
+  for Python and renders natively on GitHub.
 - End covered sources with a blank line. Nim maps a trailing statement one line
   past EOF; without that line lcov aborts on `range`/`unmapped`, and `coverage`
   keeps those fatal so the failure stays visible. It ignores exactly one error,
-  `mismatch`, which lcov 2.0 raises on a NimContracts-generated destructor and
-  lcov 2.5 does not — a compiler-generated symbol, not a line of the library.
+  `mismatch`, which lcov 2.0 raises on a compiler-generated destructor and lcov
+  2.5 does not — a generated symbol, not a line of the library.
+- `vgraph.cfg` must name the modules that exist. A layer no file answers to
+  constrains nothing, and `checkVGraph` then passes on a graph it never read.
+- Coverage instruments `tests/test_all.nim` alone: gcov data for a second
+  compilation into the same nimcache overwrites the first.
 
 ## Scope
 
-GitHub template repository for the `Uni*` family: "Use this template" starts an
-engine with the layout, the gates and the CI in place. Apache-2.0, DCO.
+A Model Context Protocol server as a library: JSON-RPC framing, the
+initialization lifecycle, protocol negotiation, the tool registry, dispatch and
+the protocol's error codes. Tools are the caller's callbacks; application
+state, authentication and I/O are not this library's business. Tools are the
+only MCP capability advertised — see ADR-0005. Apache-2.0, DCO.

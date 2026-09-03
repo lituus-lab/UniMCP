@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 lituus-lab
-# UniMCP — reference scaffold for the lituus-lab Uni* family.
+# UniMCP — Model Context Protocol server engine for the lituus-lab Uni* family.
 
 version       = "0.1.0"
 author        = "lituus-lab"
-description   = "Reference template for the lituus-lab Uni* libraries (Nim + C-ABI + Python)"
+description   = "Model Context Protocol server engine: JSON-RPC dispatch, tool registry, stdio transport"
 license       = "Apache-2.0"
 srcDir        = "src"
 
 requires "nim >= 2.2.0"
-requires "https://github.com/lbartoletti/NimContracts#main"
+# No NimContracts: every check in this library guards the wire protocol or the
+# C ABI, and both must hold under -d:release, where contracts are compiled
+# away. Declaring it unused would make every consumer fetch it for nothing.
 
 # The book toolchain, needed by three tasks and by nothing the library ships.
 # Pinned to GitHub tags rather than the registry: the registry lags upstream
@@ -48,8 +50,10 @@ import std/strutils
 const python = when defined(windows): "python" else: "python3"
 
 const CoverageMin = 90.0
-  ## Line coverage below this fails `coverage`. The template sits at 100 on one
-  ## module; a real engine sets what its own suite can hold.
+  ## Line coverage below this fails `coverage`. The suite reaches every branch
+  ## of the dispatcher and the transport; what it leaves is `serveStdio`, which
+  ## needs a real stdin. The C ABI is covered by `ctest` and `pyTest` instead --
+  ## it links no Nim test binary, so gcov never sees it.
 
 const gateExe =
   when defined(windows): "build/unigate.exe" else: "build/unigate"
@@ -128,7 +132,7 @@ task docs, "API reference + book into pages/ — what CI publishes":
   # the absolute path of the machine that built it. It does not get published.
   rmFile "pages/book.json"
   # The generated reference sits beside the book, not inside it.
-  exec "nim doc --index:on --outdir:pages/api --project --hints:off src/UniMCP.nim"
+  exec "nim doc --path:src --index:on --outdir:pages/api --project --hints:off src/UniMCP.nim"
   # ...and wears the same theme. `nim doc` has no stylesheet option, so the
   # palette is appended to the one it just wrote. Left alone, that reference
   # ships six tokens below their contrast bar.
@@ -137,22 +141,26 @@ task docs, "API reference + book into pages/ — what CI publishes":
   done "docs"
 
 task test, "Nim tests (debug, contracts active)":
-  exec "nim c -r --path:src -o:build/test_fibonacci tests/test_fibonacci.nim"
+  exec "nim c -r --path:src -o:build/test_protocol tests/test_protocol.nim"
+  exec "nim c -r --path:src -o:build/test_dispatch tests/test_dispatch.nim"
   exec "nim c -r --path:src -o:build/test_version tests/test_version.nim"
   done "test"
 
 task testRelease, "Nim tests (release, contracts compiled away)":
-  exec "nim c -r -d:release --path:src -o:build/test_fibonacci_rel tests/test_fibonacci.nim"
+  exec "nim c -r -d:release --path:src -o:build/test_protocol_rel tests/test_protocol.nim"
+  exec "nim c -r -d:release --path:src -o:build/test_dispatch_rel tests/test_dispatch.nim"
   exec "nim c -r -d:release --path:src -o:build/test_version_rel tests/test_version.nim"
   done "testRelease"
 
 task testCi, "Nim tests CI runs, debug — narrow this in a clone whose suite grows slow":
-  exec "nim c -r --path:src -o:build/test_fibonacci tests/test_fibonacci.nim"
+  exec "nim c -r --path:src -o:build/test_protocol tests/test_protocol.nim"
+  exec "nim c -r --path:src -o:build/test_dispatch tests/test_dispatch.nim"
   exec "nim c -r --path:src -o:build/test_version tests/test_version.nim"
   done "testCi"
 
 task testCiRelease, "Nim tests CI runs, release — narrow this in a clone whose suite grows slow":
-  exec "nim c -r -d:release --path:src -o:build/test_fibonacci_rel tests/test_fibonacci.nim"
+  exec "nim c -r -d:release --path:src -o:build/test_protocol_rel tests/test_protocol.nim"
+  exec "nim c -r -d:release --path:src -o:build/test_dispatch_rel tests/test_dispatch.nim"
   exec "nim c -r -d:release --path:src -o:build/test_version_rel tests/test_version.nim"
   done "testCiRelease"
 
@@ -180,18 +188,18 @@ const
     else: ""
 
 task clib, "C shared library":
-  exec "nim c --app:lib -d:noAutoInit --noMain --mm:arc -d:release -o:" & sharedLib & macArgs &
+  exec "nim c --path:src --app:lib -d:noAutoInit --noMain --mm:arc -d:release -o:" & sharedLib & macArgs &
        " src/UniMCP/c_api.nim"
   done "clib"
 
 task clibStatic, "C static library":
-  exec "nim c --app:staticlib --noMain --mm:arc -d:release -d:noAutoInit -o:" & staticLib &
+  exec "nim c --path:src --app:staticlib --noMain --mm:arc -d:release -d:noAutoInit -o:" & staticLib &
        " src/UniMCP/c_api.nim"
   done "clibStatic"
 
 task clibMsvc, "C static library, MSVC ABI (Windows Python extension)":
   # CPython on Windows is MSVC-built and cannot link MinGW output.
-  exec "nim c --cc:vcc --app:staticlib --noMain --mm:arc -d:release -d:noAutoInit" &
+  exec "nim c --path:src --cc:vcc --app:staticlib --noMain --mm:arc -d:release -d:noAutoInit" &
        " -o:UniMCP.lib src/UniMCP/c_api.nim"
   done "clibMsvc"
 
@@ -254,7 +262,7 @@ task coverage, "LCOV + HTML coverage report for the Nim sources (needs lcov)":
   # codegen.
   #
   # One error is ignored, by name: `mismatch`, which lcov 2.0 raises on the
-  # end line of NimContracts' generated `eqdestroy_` for its Defect types
+  # end line of a compiler-generated `eqdestroy_`
   # (lcov 2.5 does not, so the runners disagree with a developer machine).
   # It concerns a compiler-generated symbol, not a line of this library.
   # `range` and `unmapped` stay fatal: those would mean the capture no longer
@@ -264,7 +272,7 @@ task coverage, "LCOV + HTML coverage report for the Nim sources (needs lcov)":
   rmDir "coverage"
   exec "nim c --path:src --nimcache:" & cache &
        " --debugger:native --passC:--coverage --passL:--coverage" &
-       " -o:build/test_coverage tests/test_fibonacci.nim"
+       " -o:build/test_coverage tests/test_all.nim"
   exec "./build/test_coverage"
   exec "lcov --capture --directory " & cache & " --base-directory ." &
        " --include \"*/src/UniMCP/*\" --ignore-errors mismatch" &

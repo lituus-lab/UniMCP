@@ -2,9 +2,9 @@
 # Copyright 2026 lituus-lab
 ## The table of contents, and the two settings that decide the theme.
 ##
-## Four chapters, because the standard asks a chapter for ten slots and a
-## single page cannot show them separately. What a reader takes from this book
-## is not fibonacci; it is the shape.
+## Six chapters: what the library is, the boundary it draws, the protocol it
+## speaks, the tools it dispatches, and the two surfaces that reach it from
+## outside Nim.
 import std/tables
 import nimibook
 # `from ... import` and not a plain import: the theme module re-exports nimib
@@ -14,12 +14,14 @@ from lituus_theme import faviconTag
 
 var book = initBookWithToc:
   entry("UniMCP", "index.nim")
-  entry("Fibonacci", "fibonacci.nim")
-  entry("Contracts", "contracts.nim")
-  entry("Surfaces", "surfaces.nim")
+  entry("Architecture", "architecture.nim")
+  entry("Protocol", "protocol.nim")
+  entry("Tools", "tools.nim")
+  entry("The C surface", "c_binding.nim")
+  entry("The Python surface", "python_binding.nim")
 
 book.title = "UniMCP"
-book.description = "The scaffold every lituus-lab Uni* engine starts from."
+book.description = "A Model Context Protocol server, as a library."
 
 # The two BookConfig fields that select a theme. nimibook's inline script picks
 # between them with `prefers-color-scheme`, and localStorage overrides.

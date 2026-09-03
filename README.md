@@ -2,27 +2,34 @@
 <!-- Copyright 2026 lituus-lab -->
 # UniMCP
 
-GitHub template repository for the `lituus-lab` `Uni*` libraries. Press **Use
-this template** and a new engine starts with the layout, the gates and the CI
-already in place. Hello-world: `fibonacci`, in Nim, C ABI, and Python.
+A Model Context Protocol server, as a library, for the `lituus-lab` `Uni*`
+family. UniMCP owns the part of MCP that is the same in every server — JSON-RPC
+framing, the initialization handshake, protocol negotiation, the tool registry,
+dispatch and the error codes — and none of what makes a server yours: tools are
+your callbacks, and state, authentication and I/O stay on your side.
 
-**Status: incubating.** The layout, the gates and the CI are in use across the
-family and are not expected to move much. The `0.x` C ABI is not frozen, and
-this repo is a starting point rather than a dependency: nothing should require
-it.
+Three surfaces, one engine: **Nim**, a **C ABI** (two JSON documents and a
+function pointer), and a **Python** binding.
+
+**Status: incubating.** The `0.x` C ABI is not frozen. MCP `2025-11-25` and
+`2024-11-05` are the negotiated protocol versions; tools are the only
+capability advertised.
 
 ## Layout
 
 ```text
-src/UniMCP.nim          umbrella module
-src/UniMCP/fibonacci.nim  Nim core (NimContracts)
-src/UniMCP/c_api.nim    C ABI
-include/UniMCP.h        hand-written C header
-tests/test_fibonacci.nim     Nim tests
+src/UniMCP.nim               umbrella module (re-exports std/json)
+src/UniMCP/types.nim         wire shapes: ServerInfo, ToolDescriptor, Server
+src/UniMCP/server.nim        lifecycle, dispatch, JSON-RPC errors, stdio
+src/UniMCP/c_api.nim         C ABI
+include/UniMCP.h             hand-written C header
+tests/test_protocol.nim      the session a client walks
+tests/test_dispatch.nim      everything a client can get wrong
 tests/c/                     C ABI test (links the header against the lib)
 examples/                    Nim + C demos
 py/                          Cython binding + pytest
-ADRs/                        0001 DAG, 0002 license, 0003 engine&shell, 0004 conventions
+book/                        the six-chapter book
+ADRs/                        0001 DAG, 0002 license, 0003 engine&shell, 0004 protocol boundary
 tools/gate.nim               the failure gate (see "Running a task")
 tools/lint.nim tools/vgraph.nim  nimpretty check, layer check
 tests/canary_broken.nim      does not compile, on purpose
@@ -45,7 +52,7 @@ build/unigate cexample       # C demo
 build/unigate example        # Nim demo
 build/unigate pyTest         # Cython + pytest
 build/unigate coverage       # gcov + lcov -> coverage/
-build/unigate book           # nimib book -> book/index.html
+build/unigate book           # nimib book -> book/__site/
 build/unigate docs           # book + API reference -> pages/
 build/unigate canary         # must fail: proves the gate still works
 ```
@@ -85,27 +92,29 @@ repository variable. It is off by default: across the family today every one of
 these deployments reports success while every site answers 404, and a job that
 is red forever teaches everyone to ignore red.
 
-## After "Use this template"
+## Using it
 
-Rename the tokens, then replace `fibonacci.nim` with the domain module(s).
+```nim
+import std/strutils
+import UniMCP
 
-| Template | New engine | Example |
-|---|---|---|
-| `UniMCP` | `UniFoo` | `UniAccurate`, `UniMath` |
-| `unimcp` | `unifoo` | `uniaccurate`, `unimath` |
-| `libUniMCP` | `libUniFoo` | `libUniAccurate` |
-| `UniMCP.h` | `UniFoo.h` | `UniAccurate.h` |
-| `lituus-unimcp` | `lituus-unifoo` | `lituus-uniaccurate` |
+proc handler(name: string; arguments: JsonNode): JsonNode =
+  if name != "shout": raise newException(RpcError, "unknown tool: " & name)
+  toolResult(%*{"shouted": arguments["text"].getStr.toUpperAscii})
 
-The C symbol prefix is the library's own name in lower case —
-`unimcp_fibonacci`, so `unifoo_*`. Short prefixes read better and collide:
-a binary that links several engines at once holds them all in one namespace.
+var server = newServer(
+  ServerInfo(name: "demo", title: "Demo", version: "1.0.0",
+    description: "One tool, shouted back"),
+  latestProtocol = "2025-11-25", supportedProtocols = @["2025-11-25"],
+  tools = @[tool("shout", "Shout", "Upper-case a string",
+    %*{"type": "object", "properties": {"text": {"type": "string"}},
+       "required": ["text"]}, true, false, true, false)],
+  handler = handler)
 
-Files to rename: `UniMCP.nimble`, `src/UniMCP.nim`, `src/UniMCP/`,
-`include/UniMCP.h`, `tests/c/test_unimcp.c` (+ its Makefile target),
-`py/unimcp/`. Then update `LICENSE`/`NOTICE` copyright and the ADR titles.
+server.serveStdio()   # reads stdin, writes stdout, one message per line
+```
 
-The PyPI distribution is `lituus-<module>`; the import name stays `<module>`.
+The PyPI distribution is `lituus-unimcp`; the import name stays `unimcp`.
 Distribution and import are separate decisions, and the bare names are not all
 available.
 
