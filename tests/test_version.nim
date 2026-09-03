@@ -58,17 +58,15 @@ suite "one version, six copies":
     check valueOf("py/pyproject.toml", "version", "\"", "\"") == manifest
 
   test "the Python test expects it":
-    check valueOf("py/tests/test_fibonacci.py", "unimcp.version()", "\"",
+    check valueOf("py/tests/test_unimcp.py", "unimcp.version()", "\"",
         "\"") == manifest
 
-suite "one domain bound, two copies":
-  # Python reads it from the header through the binding, so only the Nim
-  # constant and the C macro state it -- and a C consumer needs a literal.
+suite "one ABI generation, two copies":
+  # The header's macro is what a C consumer compares against; the library's
+  # entry point is what it compares to. A drift between them is exactly the
+  # incompatibility the generation exists to announce, so it is checked here.
   test "the C macro agrees with the Nim constant":
-    check valueOf("include/UniMCP.h", "UNIMCP_FIB_MAX_N", " ", "") == $FibMaxN
-
-  test "the bound is the largest that fits, and one past it does not":
-    # int64 holds fib(92); fib(93) is 12200160415121876738, which it does not.
-    check fibonacci(FibMaxN) == 7540113804746346429
-    check fibonacci(FibMaxN) < high(int)
-    check float(fibonacci(FibMaxN)) * 1.6180339887 > float(high(int))
+    check valueOf("include/UniMCP.h", "define UNIMCP_ABI_VERSION ", " ",
+        "") == valueOf("src/UniMCP/c_api.nim", "UniMCPAbiVersion: cint = ",
+        "= ",
+        "")

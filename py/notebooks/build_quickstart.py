@@ -24,48 +24,104 @@ self-contained wheel: the native library travels inside the package, so
 installing it needs neither Nim nor a compiler.
 
 ```
-pip install unimcp
+pip install lituus-unimcp
 ```
+
+UniMCP is a Model Context Protocol server, as a library. It owns the protocol —
+JSON-RPC framing, the handshake, negotiation, the tool registry, dispatch — and
+none of what makes a server yours.
 
 CI executes this notebook against the wheel the release actually publishes, so
 an output below that stops matching fails the build."""),
     ("md", "## The API"),
-    ("code", """import unimcp
+    ("code", """import json
 
-unimcp.version(), unimcp.__version__"""),
-    ("md", "`fibonacci` is the template's hello-world, iterative and O(n)."),
-    ("code", "[unimcp.fibonacci(n) for n in range(11)]"),
-    ("md", """## The domain is part of the contract
+import unimcp
 
-`fibonacci` is defined on `[0, 92]` — 92 being the largest argument whose result
-still fits in a signed 64-bit integer. The bound is not advisory."""),
-    ("code", "unimcp.fibonacci(92)"),
-    ("md", """Past it the binding raises, rather than returning a silently wrong
-number. This is the contract the Nim library states as a precondition; each
-surface expresses it in the terms its own callers expect."""),
+unimcp.version(), unimcp.abi_version()"""),
+    ("md", """## A server
+
+Three things: what the server *is*, what tools it offers, and the callable that
+runs them. The first two are the JSON documents the protocol itself defines."""),
+    ("code", """def handler(name, arguments):
+    if name != "shout":
+        raise KeyError(name)
+    return {"shouted": arguments["text"].upper()}
+
+
+server = unimcp.Server(
+    info={"name": "quickstart", "title": "Quickstart", "version": "1.0.0",
+          "description": "One tool, shouted back",
+          "latestProtocol": "2025-11-25",
+          "supportedProtocols": ["2025-11-25", "2024-11-05"]},
+    tools=[{"name": "shout", "title": "Shout",
+            "description": "Upper-case a string",
+            "inputSchema": {"type": "object",
+                            "properties": {"text": {"type": "string"}},
+                            "required": ["text"]},
+            "readOnlyHint": True, "idempotentHint": True}],
+    handler=handler)
+type(server).__name__"""),
+    ("md", """## The handshake
+
+A client sends `initialize`, the server answers with the version both sides
+will use, and the client acknowledges. Until it does, nothing else is served."""),
+    ("code", """def send(method, params=None, id=None):
+    message = {"jsonrpc": "2.0", "method": method}
+    if id is not None:
+        message["id"] = id
+    if params is not None:
+        message["params"] = params
+    reply = server.handle(json.dumps(message))
+    return json.loads(reply) if reply else None
+
+
+send("initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
+                    "clientInfo": {"name": "quickstart", "version": "1"}}, id=1)"""),
+    ("md", """The server answered with `2024-11-05`: the client asked for a
+version it supports, so that is the one in force. A version it does not know
+is answered with its own latest instead of a refusal.
+
+A notification carries no `id` and gets no reply — `handle` returns `None`."""),
+    ("code", 'send("notifications/initialized")'),
+    ("md", "## Discovery and dispatch"),
+    ("code", 'send("tools/list", id=2)'),
+    ("code", """send("tools/call",
+     {"name": "shout", "arguments": {"text": "hello"}}, id=3)"""),
+    ("md", """## When a call fails
+
+A tool that fails is not a broken connection. MCP reports it *in the result*,
+with `isError` set, so a model can read the failure and try something else."""),
+    ("code", 'send("tools/call", {"name": "absent", "arguments": {}}, id=4)'),
+    ("md", """The exception the handler raised is kept rather than dropped:"""),
+    ("code", "repr(server.last_error)"),
+    ("md", """## Errors that are the protocol's, not a tool's
+
+A malformed line, a method that does not exist, a call before the handshake:
+each has its own JSON-RPC code."""),
+    ("code", """[json.loads(server.handle("{")),
+ send("nope", id=5)]"""),
+    ("md", """## A description that cannot work
+
+Refused at construction, where the mistake is, rather than at the first
+call."""),
     ("code", """try:
-    unimcp.fibonacci(93)
+    unimcp.Server(info={}, tools=[], handler=handler)
 except ValueError as exc:
     print("ValueError:", exc)"""),
-    ("code", """try:
-    unimcp.fibonacci(-1)
-except ValueError as exc:
-    print("ValueError:", exc)"""),
-    ("md", "A non-integer argument is a type error, not a coercion."),
-    ("code", """try:
-    unimcp.fibonacci(10.0)
-except TypeError as exc:
-    print("TypeError:", exc)"""),
     ("md", """## The C ABI underneath
 
-The same entry points are reachable from anything that speaks C. There the
-contract is expressed by clamping instead of raising — an exception must never
-unwind across an ABI boundary:
+The same engine is reachable from anything that speaks C — two JSON documents
+and a function pointer:
 
 ```c
-unimcp_fibonacci(-5);   /* 0       — clamped */
-unimcp_fibonacci(200);  /* fib(92) — clamped */
+void *unimcp_server_new(const char *info, const char *tools,
+                        unimcp_tool_handler handler, void *user_data);
+const char *unimcp_server_handle(void *server, const char *line);
 ```
+
+There a failure is a `NULL` return with the reason in `unimcp_last_error`,
+because an exception must never unwind across an ABI boundary.
 
 See `include/UniMCP.h`, and the book for the full picture."""),
 ]

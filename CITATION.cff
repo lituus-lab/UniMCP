@@ -4,8 +4,9 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: UniMCP
 abstract: >-
-  Template repository for the lituus-lab Uni* libraries: a Nim engine, a C ABI
-  and a Python binding, with the gates and CI that keep the three in agreement.
+  A Model Context Protocol server as a library: JSON-RPC framing, the
+  initialization lifecycle, protocol negotiation, a tool registry and dispatch,
+  reachable from Nim, from C and from Python.
 type: software
 authors:
   - family-names: Bartoletti

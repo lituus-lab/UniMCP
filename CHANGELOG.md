@@ -11,35 +11,29 @@ change, whatever the Nim API did.
 
 ## [Unreleased]
 
+Nothing released yet; 0.1.0 will be the first tag. What it will carry:
+
 ### Added
 
-- `tools/gate.nim`, and a success marker on every task. Nimble 0.22 exits 0
-  when an `exec` inside a task failed, so its exit code proves nothing; the
-  gate reads the marker instead.
-- A `canary` task that must fail, and a CI job that checks it does.
-- An `all-green` job over every other job: one check for branch protection,
-  and a skipped job can no longer pass for a green one.
-- `tests/test_version.nim`, which reads the version out of the manifest, the
-  Nim constant, the C header, the C ABI and the Python packaging, and fails
-  when one drifts.
-- `CODE_OF_CONDUCT.md`, `CITATION.cff`, `.editorconfig`, this file.
+- The MCP server engine: JSON-RPC 2.0 framing, the `initialize` /
+  `notifications/initialized` lifecycle, protocol negotiation over
+  `2025-11-25` and `2024-11-05`, a tool registry with MCP's annotation hints,
+  dispatch, and the protocol's error codes.
+- `serveStdio`, and `handleLine` under it for callers that own their own loop.
+- A C ABI over the same engine: a server is two JSON documents and a tool
+  callback, and every message crosses as a NUL-terminated string. Failures are
+  a NULL return with the reason in `unimcp_last_error`; no Nim exception
+  crosses the boundary.
+- A Cython binding, `unimcp.Server`, dispatching into a Python callable.
+  Distributed as `lituus-unimcp`, imported as `unimcp`.
+- A six-chapter book whose C and Python chapters compile and run the demos
+  they document, and a quickstart notebook executed against the wheel.
+- The family's gates: `tools/gate.nim` and a success marker per task, a
+  `canary` that must fail, `all-green` over every CI job, `tests/test_version.nim`
+  for the version's copies and the ABI generation's two.
 
-### Changed
+### Known limits
 
-- The C ABI takes the once-primitive runtime guard and `raises: []` that every
-  library cloned from here already had.
-- The PyPI distribution becomes `lituus-unimcp`; the import name stays
-  `unimcp`.
-- Nim minimum 2.0 to 2.2.
-- Every GitHub action is pinned by commit SHA.
-- Coverage below 90% fails, instead of being reported and ignored.
-- Pages deploys only where `PUBLISH_PAGES` is set.
-- The Python binding reads the domain bound from the C header rather than
-  restating it.
-
-### Fixed
-
-- Documentation that the code contradicted: the C prefix, what `--noMain`
-  implies, NimContracts described as optional, a library that does not exist,
-  eight numbered layers nothing defines, the platforms the C ABI is tested on,
-  and a NimContracts branch deleted upstream.
+- Tools are the only MCP capability advertised. Prompts and resources are out
+  of scope until there is a consumer to test against — see ADR-0005.
+- The `0.x` C ABI is not frozen.

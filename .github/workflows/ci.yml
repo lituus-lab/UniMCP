@@ -30,7 +30,7 @@ jobs:
     with:
       library: UniMCP
       module: unimcp
-      python-smoke-test: py/tests/test_fibonacci.py
+      python-smoke-test: py/tests/test_unimcp.py
 
   all-green:
     name: All green
