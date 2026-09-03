@@ -43,7 +43,10 @@ server = unimcp.Server(
           "latestProtocol": "2025-11-25",
           "supportedProtocols": ["2025-11-25"]},
     tools=[{"name": "shout", "title": "Shout", "description": "Upper-case a string",
-            "inputSchema": {"type": "object"}, "readOnlyHint": True}],
+            "inputSchema": {"type": "object",
+                            "properties": {"text": {"type": "string"}},
+                            "required": ["text"]},
+            "readOnlyHint": True}],
     handler=handler)
 
 print("version:", unimcp.version(), "ABI:", unimcp.abi_version())
@@ -67,7 +70,8 @@ signature:
 - **A handler that raises does not raise here.** The call is answered with the
   protocol's error result — that is what MCP prescribes, and raising instead
   would end a serving loop on its first bad call. The exception is not dropped:
-  it is kept on `server.last_error`.
+  it is kept on `server.last_error`. A tool that is not registered never reaches
+  the handler at all; it is answered with `-32602`.
 - **A description that cannot work raises at construction.** `ValueError`, with
   the engine's own message — the same check the C ABI reports through
   `unimcp_last_error`.

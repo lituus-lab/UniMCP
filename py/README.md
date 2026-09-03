@@ -30,7 +30,10 @@ server = unimcp.Server(
     info={"name": "demo", "version": "1.0.0",
           "latestProtocol": "2025-11-25",
           "supportedProtocols": ["2025-11-25"]},
-    tools=[{"name": "shout", "inputSchema": {"type": "object"}}],
+    tools=[{"name": "shout",
+            "inputSchema": {"type": "object",
+                            "properties": {"text": {"type": "string"}},
+                            "required": ["text"]}}],
     handler=handler)
 
 server.handle(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}))

@@ -41,5 +41,10 @@ proc tool*(name, title, description: string; inputSchema: JsonNode;
 
 proc toolResult*(data: JsonNode; isError = false; text = ""): JsonNode =
   let rendered = if text.len > 0: text else: $data
-  %*{"content": [{"type": "text", "text": rendered}],
-    "structuredContent": data, "isError": isError}
+  result = %*{"content": [{"type": "text", "text": rendered}],
+    "isError": isError}
+  # `structuredContent` is an object or it is not there: the protocol allows no
+  # other shape, and a strict client rejects the whole response rather than the
+  # one field. The rendering above still carries the value, whatever its shape.
+  if data != nil and data.kind == JObject:
+    result["structuredContent"] = data

@@ -44,8 +44,6 @@ unimcp.version(), unimcp.abi_version()"""),
 Three things: what the server *is*, what tools it offers, and the callable that
 runs them. The first two are the JSON documents the protocol itself defines."""),
     ("code", """def handler(name, arguments):
-    if name != "shout":
-        raise KeyError(name)
     return {"shouted": arguments["text"].upper()}
 
 
@@ -92,15 +90,19 @@ A notification carries no `id` and gets no reply — `handle` returns `None`."""
 
 A tool that fails is not a broken connection. MCP reports it *in the result*,
 with `isError` set, so a model can read the failure and try something else."""),
-    ("code", 'send("tools/call", {"name": "absent", "arguments": {}}, id=4)'),
+    ("code", 'send("tools/call", {"name": "shout", "arguments": {}}, id=4)'),
     ("md", """The exception the handler raised is kept rather than dropped:"""),
     ("code", "repr(server.last_error)"),
+    ("md", """A tool that does not exist is a different failure, and the engine
+answers it before the handler is asked: `-32602`, a bad parameter. Your handler
+is never called for a name `tools/list` did not advertise."""),
+    ("code", 'send("tools/call", {"name": "absent", "arguments": {}}, id=5)'),
     ("md", """## Errors that are the protocol's, not a tool's
 
 A malformed line, a method that does not exist, a call before the handshake:
 each has its own JSON-RPC code."""),
     ("code", """[json.loads(server.handle("{")),
- send("nope", id=5)]"""),
+ send("nope", id=6)]"""),
     ("md", """## A description that cannot work
 
 Refused at construction, where the mistake is, rather than at the first

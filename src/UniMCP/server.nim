@@ -23,6 +23,19 @@ proc stringField(message: JsonNode; key: string): string =
     raise newException(RpcError, "required string argument: " & key)
   message[key].getStr
 
+proc declaresObject(schema: JsonNode): bool =
+  ## An object is not enough: the schema MCP publishes for a tool is a JSON
+  ## Schema whose `type` is the literal "object", and a client is entitled to
+  ## rely on that.
+  ##
+  ## Written as a procedure rather than inline: the condition spelled out at its
+  ## call site is one character too long, and nimpretty wraps it into
+  ## `JObject ordescriptor`, which does not compile. `nimble lint` would then
+  ## demand exactly that.
+  if schema == nil or schema.kind != JObject:
+    return false
+  schema.getOrDefault("type").getStr == "object"
+
 proc toolList(server: Server): JsonNode =
   var tools = newJArray()
   for descriptor in server.tools:
@@ -46,8 +59,11 @@ proc newServer*(info: ServerInfo;
   for descriptor in tools:
     if descriptor.name.len == 0 or descriptor.name in names:
       raise newException(ValueError, "tool names must be non-empty and unique")
-    if descriptor.inputSchema == nil or descriptor.inputSchema.kind != JObject:
-      raise newException(ValueError, "tool input schema must be an object")
+    # Refused here, where the mistake is, rather than advertised through
+    # tools/list and rejected by the client.
+    if not descriptor.inputSchema.declaresObject:
+      raise newException(ValueError,
+        "tool input schema must be an object declaring \"type\": \"object\"")
     names.add(descriptor.name)
   result = Server(info: info, instructions: instructions,
     latestProtocol: latestProtocol,
@@ -95,6 +111,17 @@ proc handle*(server: var Server; message: JsonNode): JsonNode =
           "arguments"] else: newJObject()
       if arguments.kind != JObject:
         raise newException(RpcError, "expected object argument: arguments")
+      # A name tools/list never advertised does not reach the handler. MCP
+      # separates the two failures: a tool that ran and failed is an error
+      # result, a tool that does not exist is a bad parameter -- and a handler
+      # asked for a name it never registered cannot answer for it anyway.
+      var registered = false
+      for descriptor in server.tools:
+        if descriptor.name == name:
+          registered = true
+          break
+      if not registered:
+        return rpcError(id, -32602, "unknown tool: " & name)
       return response(id, server.handler(name, arguments))
     else: return rpcError(id, -32601, "Method not found")
   except RpcError as error:

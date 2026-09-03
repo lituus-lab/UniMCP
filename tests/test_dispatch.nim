@@ -15,6 +15,7 @@ proc handler(name: string; arguments: JsonNode): JsonNode =
   case name
   of "echo": toolResult(arguments)
   of "labelled": toolResult(arguments, text = "a rendering of its own")
+  of "listy": toolResult(%*[1, 2])
   of "broken": raise newException(ValueError, "the tool itself failed")
   else: raise newException(KeyError, "unknown tool: " & name)
 
@@ -24,7 +25,8 @@ proc oneTool(name: string): seq[ToolDescriptor] =
 proc fixture(): Server =
   newServer(ServerInfo(name: "fixture", title: "F", version: "1.0.0",
     description: "d"), "2025-11-25", @["2025-11-25"],
-    oneTool("echo") & oneTool("labelled") & oneTool("broken"), handler)
+    oneTool("echo") & oneTool("labelled") & oneTool("listy") &
+      oneTool("broken"), handler)
 
 proc ready(): Server =
   result = fixture()
@@ -57,13 +59,13 @@ suite "a server that cannot work is refused at construction":
       discard newServer(ServerInfo(), "2025-11-25", @["2025-11-25"],
         oneTool("echo") & oneTool("echo"), handler)
 
-  test "an input schema must be an object":
-    expect ValueError:
-      discard newServer(ServerInfo(), "2025-11-25", @["2025-11-25"],
-        @[tool("t", "T", "d", nil, true, false, true, false)], handler)
-    expect ValueError:
-      discard newServer(ServerInfo(), "2025-11-25", @["2025-11-25"],
-        @[tool("t", "T", "d", %*[1], true, false, true, false)], handler)
+  test "an input schema must be an object declaring an object type":
+    # The shape MCP publishes for a tool. An empty object and a schema of
+    # another type both reach a client as a tool it cannot call correctly.
+    for schema in [JsonNode(nil), %*[1], %*{}, %*{"type": "string"}]:
+      expect ValueError:
+        discard newServer(ServerInfo(), "2025-11-25", @["2025-11-25"],
+          @[tool("t", "T", "d", schema, true, false, true, false)], handler)
 
 suite "methods outside the session":
   test "ping needs no handshake":
@@ -102,13 +104,22 @@ suite "tools/call, when the call goes wrong":
     check "the tool itself failed" in $failed["result"]
     check server.handle(request(5, "ping"))["result"].kind == JObject
 
-  test "a tool nobody declared is a bad argument, not a failed call":
-    # The handler raises KeyError, which the engine reports as -32602: the
-    # request named something that does not exist, rather than a tool that ran
-    # and failed.
+  test "a tool nobody declared never reaches the handler":
+    # -32602, decided by the engine before dispatch: the request named something
+    # tools/list does not advertise, which is a bad parameter rather than a tool
+    # that ran and failed. The handler would raise KeyError here, and that would
+    # be an error result -- the wrong answer, so it must not be asked.
     var server = ready()
     check server.handle(request(6, "tools/call",
       %*{"name": "absent", "arguments": {}}))["error"]["code"].getInt == -32602
+
+  test "structured content is an object, or it is not there":
+    # The protocol allows no other shape; the rendering still carries the value.
+    var server = ready()
+    let listed = server.handle(request(8, "tools/call",
+      %*{"name": "listy", "arguments": {}}))["result"]
+    check not listed.hasKey("structuredContent")
+    check listed["content"][0]["text"].getStr == "[1,2]"
 
   test "a tool may render its own text beside the structured content":
     var server = ready()

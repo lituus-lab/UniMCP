@@ -95,6 +95,7 @@ is red forever teaches everyone to ignore red.
 ## Using it
 
 ```nim
+import std/strutils
 import UniMCP
 
 proc handler(name: string; arguments: JsonNode): JsonNode =

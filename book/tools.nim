@@ -73,17 +73,21 @@ A tool that fails is not a transport failure. MCP reports it *in the result*,
 with `isError` set — which is what lets a model read the failure and try
 something else, instead of the connection dropping under it.
 
-Which exception you raise decides which of the two answers the client gets:
+A tool that does not exist is a different failure, and gets a different answer:
+the engine refuses it with `-32602` before your handler is asked. Your handler
+is never called for a name `tools/list` did not advertise, so it never has to
+decide what to do about one.
 
-| Raised in the handler | Client receives |
+| What happened | Client receives |
 |---|---|
-| `RpcError` | an error **result**, `isError: true` |
-| any other `CatchableError` | an error **result**, `isError: true` |
-| `KeyError` | `-32602`, invalid params |
+| the handler raised `RpcError` | an error **result**, `isError: true` |
+| the handler raised any other `CatchableError` | an error **result**, `isError: true` |
+| the tool is not registered | `-32602`, invalid params — before dispatch |
+| the handler raised `KeyError` | `-32602`, invalid params |
 
-`KeyError` is the odd one, and deliberately so: it is what `[]` raises on a
-missing member, so it means the *request* named something absent rather than a
-tool that ran and failed.
+`KeyError` keeps its own row because it is what `[]` raises on a missing member:
+a handler that reads an argument which is not there is reporting a bad request,
+not a tool that ran and failed.
 """
 
 nbCode:
@@ -102,8 +106,9 @@ nbText: """
 
 `newServer` will not build a server that cannot work: a latest protocol that is
 not among the supported ones, no handler, a tool with no name, two tools of one
-name, or an input schema that is not an object. Each raises `ValueError` — at
-construction, where the mistake is, rather than at the first call.
+name, or an input schema that is not an object declaring `"type": "object"` —
+the shape MCP publishes for a tool. Each raises `ValueError` at construction,
+where the mistake is, rather than at the first call.
 """
 
 nbSave

@@ -67,8 +67,8 @@ conflating them is the mistake this ABI is shaped to prevent:
 | What went wrong | How you learn |
 |---|---|
 | the call could not be made (NULL argument, bad description) | `NULL` return, reason in `unimcp_last_error` |
-| the *protocol* rejected the message | a normal reply carrying an error object |
-| a *tool* failed | a normal reply with `"isError": true` |
+| the *protocol* rejected the message, or the tool is not registered | a normal reply carrying an error object |
+| a registered *tool* failed | a normal reply with `"isError": true` |
 
 Only the first is an ABI failure. The other two are answers, and a server that
 treats them as errors will hang up on clients that are behaving correctly.

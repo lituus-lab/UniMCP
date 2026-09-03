@@ -79,6 +79,12 @@ type
 
 # The reason for the last failure, read back through `unimcp_last_error`.
 # A single slot, as the header states: it is overwritten by the next failure.
+#
+# One slot for the whole library, not one per thread, and not synchronized: two
+# threads failing at once race on it, and the pointer `unimcp_last_error` hands
+# back can be invalidated by another thread's failure before the caller reads
+# it. The header states that contract; a caller that needs more must serialize
+# its own calls.
 var lastError = ""
 
 proc setError(message: string) {.raises: [].} =
@@ -133,7 +139,15 @@ proc dispatcher(handler: ToolCallback; userData: pointer): ToolHandler =
     let answer = handler(name.cstring, ($arguments).cstring, userData)
     if answer == nil:
       raise newException(RpcError, "tool call failed: " & name)
-    toolResult(parseJson($answer))
+    var structured: JsonNode
+    try:
+      structured = parseJson($answer)
+    except CatchableError:
+      # A document the callback cannot serialize is a failed call, reported as
+      # one. Letting JsonParsingError out of the closure would surface as a NULL
+      # from unimcp_server_handle -- the client would receive no reply at all.
+      raise newException(RpcError, "tool returned invalid JSON: " & name)
+    toolResult(structured)
 
 {.push exportc, cdecl, dynlib, raises: [].}
 

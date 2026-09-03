@@ -36,7 +36,8 @@ static char answer[256];
 static const char *echo_tool(const char *name, const char *arguments,
                              void *user_data) {
   (*(int *)user_data)++;
-  if (strcmp(name, "echo") != 0) return NULL; /* reported as a failed call */
+  if (strcmp(name, "broken") == 0) return NULL;      /* a failed call */
+  if (strcmp(name, "unparseable") == 0) return "{ ]"; /* also a failed call */
   snprintf(answer, sizeof answer, "{\"seen\":%s}", arguments);
   return answer;
 }
@@ -49,7 +50,9 @@ static const char *INFO =
 static const char *TOOLS =
     "[{\"name\":\"echo\",\"title\":\"Echo\",\"description\":\"Return what it is given\","
     "\"inputSchema\":{\"type\":\"object\"},\"readOnlyHint\":true,"
-    "\"idempotentHint\":true}]";
+    "\"idempotentHint\":true},"
+    "{\"name\":\"broken\",\"inputSchema\":{\"type\":\"object\"}},"
+    "{\"name\":\"unparseable\",\"inputSchema\":{\"type\":\"object\"}}]";
 
 int main(void) {
   check_str("version", unimcp_version(), UNIMCP_VERSION);
@@ -81,11 +84,25 @@ int main(void) {
   check_has("the C callback answered", reply, "from C");
   check("the callback ran once", calls == 1);
 
-  // A tool the callback rejects: an error result, not a dead server.
+  // A registered tool the callback rejects: an error result, not a dead server.
   reply = unimcp_server_handle(server,
       "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":"
-      "{\"name\":\"absent\",\"arguments\":{}}}");
+      "{\"name\":\"broken\",\"arguments\":{}}}");
   check_has("a rejected call is an error result", reply, "\"isError\":true");
+
+  // An answer that is not JSON is the same kind of failure, not a dropped reply.
+  reply = unimcp_server_handle(server,
+      "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":"
+      "{\"name\":\"unparseable\",\"arguments\":{}}}");
+  check_has("an unparseable answer is an error result", reply, "\"isError\":true");
+
+  // A name tools/list never advertised never reaches the callback.
+  int before = calls;
+  reply = unimcp_server_handle(server,
+      "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":"
+      "{\"name\":\"absent\",\"arguments\":{}}}");
+  check_has("an unregistered tool is a protocol error", reply, "-32602");
+  check("and the callback was not run", calls == before);
 
   reply = unimcp_server_handle(server, "{ not json");
   check_has("malformed input is answered, not rejected", reply, "-32700");
@@ -95,7 +112,7 @@ int main(void) {
   check_has("and says why", unimcp_last_error(), "NULL argument");
 
   // The server survived every one of those.
-  reply = unimcp_server_handle(server, "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"ping\"}");
+  reply = unimcp_server_handle(server, "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}");
   check_has("still serving", reply, "\"result\"");
 
   unimcp_server_free(server);
@@ -108,7 +125,11 @@ int main(void) {
         unimcp_server_new(INFO, TOOLS, NULL, &calls) == NULL);
   check("two tools of one name are refused",
         unimcp_server_new(INFO,
-            "[{\"name\":\"a\",\"inputSchema\":{}},{\"name\":\"a\",\"inputSchema\":{}}]",
+            "[{\"name\":\"a\",\"inputSchema\":{\"type\":\"object\"}},"
+            "{\"name\":\"a\",\"inputSchema\":{\"type\":\"object\"}}]",
+            echo_tool, &calls) == NULL);
+  check("a schema that does not declare an object type is refused",
+        unimcp_server_new(INFO, "[{\"name\":\"a\",\"inputSchema\":{}}]",
             echo_tool, &calls) == NULL);
 
   if (failures == 0) { printf("\nAll C ABI tests passed.\n"); return 0; }

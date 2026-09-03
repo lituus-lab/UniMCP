@@ -30,7 +30,12 @@ const char *unimcp_version(void);
 int unimcp_abi_version(void);
 
 /* The message for the failure the last call reported, or "" when none has.
- * Borrowed: this library owns it, and the next failing call overwrites it. */
+ * Borrowed: this library owns it, and the next failing call overwrites it.
+ *
+ * Not thread-safe, and not per-thread: one slot serves the whole library, with
+ * no synchronization. Two threads failing at once race on it, and a returned
+ * pointer can be invalidated by another thread's failure before it is read.
+ * Read it on the thread that made the failing call, before any other call. */
 const char *unimcp_last_error(void);
 
 /* What UniMCP calls for `tools/call`.
@@ -60,8 +65,10 @@ typedef const char *(*unimcp_tool_handler)(const char *name,
  *    "inputSchema": {"type": "object", ...},
  *    "readOnlyHint": true, "destructiveHint": false,
  *    "idempotentHint": true, "openWorldHint": false}
- * Names must be non-empty and unique, and each inputSchema an object; the
- * hints default to false.
+ * Names must be non-empty and unique, and each inputSchema must be an object
+ * declaring "type": "object" -- that is the shape MCP publishes for a tool, and
+ * a descriptor that does not meet it is refused here rather than advertised.
+ * The hints default to false.
  *
  * Both documents are read during this call and not retained. */
 void *unimcp_server_new(const char *info, const char *tools,

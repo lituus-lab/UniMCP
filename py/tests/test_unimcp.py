@@ -25,12 +25,16 @@ TOOLS = [{
                     "required": ["value"]},
     "readOnlyHint": True,
     "idempotentHint": True,
+}, {
+    "name": "broken",
+    "description": "Always fails",
+    "inputSchema": {"type": "object"},
 }]
 
 
 def echo(name, arguments):
-    if name != "echo":
-        raise KeyError(f"unknown tool: {name}")
+    if name == "broken":
+        raise RuntimeError("the tool itself failed")
     return {"value": arguments["value"]}
 
 
@@ -72,7 +76,7 @@ def test_falls_back_to_the_latest_protocol(server):
 def test_lists_the_declared_tools(server):
     initialized(server)
     listed = json.loads(server.handle(request(2, "tools/list")))["result"]["tools"]
-    assert [t["name"] for t in listed] == ["echo"]
+    assert [t["name"] for t in listed] == ["echo", "broken"]
     assert listed[0]["annotations"]["readOnlyHint"] is True
 
 
@@ -91,11 +95,27 @@ def test_a_notification_has_no_reply(server):
 def test_a_handler_that_raises_is_an_error_result(server):
     initialized(server)
     called = json.loads(server.handle(request(4, "tools/call", {
-        "name": "absent", "arguments": {}})))
+        "name": "broken", "arguments": {}})))
     # MCP reports a tool failure in the result, not as a transport error --
     # so the call answers, and the exception stays readable.
     assert called["result"]["isError"] is True
-    assert isinstance(server.last_error, KeyError)
+    assert isinstance(server.last_error, RuntimeError)
+
+
+def test_an_unregistered_tool_never_reaches_the_handler(server):
+    initialized(server)
+    answer = json.loads(server.handle(request(5, "tools/call", {
+        "name": "absent", "arguments": {}})))
+    # A protocol error decided before dispatch, not a failed call.
+    assert answer["error"]["code"] == -32602
+    assert server.last_error is None
+
+
+def test_a_schema_without_an_object_type_is_refused():
+    with pytest.raises(ValueError, match="type"):
+        unimcp.Server(info=INFO,
+                      tools=[{"name": "t", "inputSchema": {}}],
+                      handler=echo)
 
 
 def test_malformed_input_is_answered(server):
